@@ -19,7 +19,7 @@ from itertools import cycle
 class LLMGenerator:
     def __init__(self, model_name, device, **model_args):
         # Create a vllm LLM instance
-        engine_args = EngineArgs(model=model_name, device=device, **model_args)
+        engine_args = EngineArgs(model=model_name, gpu_memory_utilization=0.8, device=device, **model_args)
         self.model = LLM(**vars(engine_args))
         self.model_name = model_name
         self.device = device
@@ -58,7 +58,7 @@ class LLMGenerator:
 class LLMScorer:
     def __init__(self, model_name, device, **model_args):
         # Create a vllm LLM instance
-        engine_args = EngineArgs(model=model_name, device=device, **model_args)
+        engine_args = EngineArgs(model=model_name, gpu_memory_utilization=0.8, device=device, **model_args)
         self.model = LLM(**vars(engine_args))
         self.model_name = model_name
         self.device = device

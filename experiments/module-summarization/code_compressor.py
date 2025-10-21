@@ -213,7 +213,7 @@ class CodeCompressor:
         self.load_model(model_name, device_map, model_config)
         
         logger.debug("Initializing Entropy chunking...")
-        self.ppl_chunking = EntropyChunking()
+        self.entropy_chunking = EntropyChunking()
         
         # Add caching system for model outputs and token information
         self.cache = {
@@ -576,7 +576,9 @@ class CodeCompressor:
         start_time = time.time()
         
         if not context_list:
-            return [], [], []
+            # Always return a 4-tuple: (selected_contexts, used_indices, dynamic_ratio, demonstrations_sort)
+            # Keep API consistent for callers that unpack 4 values
+            return [], [], [], []
         
         # Get token counts for each context
         logger.debug("Calculating token lengths for contexts")
@@ -588,7 +590,9 @@ class CodeCompressor:
             logger.debug(f"All contexts fit within budget ({total_tokens} <= {target_token})")
             end_time = time.time()
             logger.debug(f"Context budget control completed in {end_time - start_time:.2f} seconds")
-            return context_list, list(range(len(context_list))), [0.0] * len(context_list)
+            # Build a default demonstrations_sort with zero scores to preserve structure
+            demonstrations_sort = list(zip(range(len(context_list)), [0.0] * len(context_list)))
+            return context_list, list(range(len(context_list))), [0.0] * len(context_list), demonstrations_sort
         
         # Rank contexts by relevance if question is provided
         logger.debug("Ranking contexts by relevance")
