@@ -1586,7 +1586,7 @@ class LongCodeZip:
                 cond_resp = _prompt_logprobs(condition_text)
                 cond_prompt_tokens = getattr(cond_resp.choices[0].logprobs, "prompt", None)
                 if not cond_prompt_tokens:
-                    self.logger.warning("Server didn't return prompt logprobs for condition_text")
+                    logger.warning("Server didn't return prompt logprobs for condition_text")
                     return float('inf')
                 cond_len = len(cond_prompt_tokens)
 
@@ -1594,7 +1594,7 @@ class LongCodeZip:
                 full_resp = _prompt_logprobs(full)
                 full_prompt_tokens = getattr(full_resp.choices[0].logprobs, "prompt", None)
                 if not full_prompt_tokens or len(full_prompt_tokens) <= cond_len:
-                    self.logger.warning("Full prompt tokens missing or shorter than condition length")
+                    logger.warning("Full prompt tokens missing or shorter than condition length")
                     return float('inf')
 
                 tgt_tokens = full_prompt_tokens[cond_len:]
@@ -1615,7 +1615,7 @@ class LongCodeZip:
             return ppl
 
         except Exception as e:
-            self.logger.exception("Failed to compute perplexity via OpenAI/vLLM endpoint")
+            logger.exception("Failed to compute perplexity via OpenAI/vLLM endpoint")
             return float('inf')
 
     def _calculate_contrastive_perplexity(self, code_lines: List[str], question: str):
