@@ -383,39 +383,82 @@ class LongCodeZip:
             end = input_ids.shape[1]
         end = min(end, past_length + self.max_position_embeddings)
 
-        with torch.no_grad():
-            outputs = self.model(
-                input_ids=input_ids[:, past_length:end],
-                attention_mask=attention_mask[:, :end],
-                past_key_values=past_key_values,
-                return_dict=True,
-                output_hidden_states=True,
-                use_cache=True,
+        if input_ids is not None:
+            prompt_text = self.tokenizer.decode(
+                input_ids[0, :end].tolist(),
+                skip_special_tokens=False
             )
+        else:
+            prompt_text = text
 
-        # Get logits and shift
-        shift_logits = outputs.logits[..., :-1, :].contiguous()
-        shift_labels = input_ids[..., past_length + 1:end].contiguous()
+        try:
+            resp = self.openai_client.completions.create(
+                model=self.model_name,
+                prompt=prompt_text,
+                max_tokens=0,
+                temperature=0,
+                extra_body={"prompt_logprobs": 1}
+            )
+        except Exception:
+            logger.exception("OpenAI/vLLM completions call failed")
+            loss = torch.tensor([], dtype=torch.float32)
+            ppl = float('inf')
+            result = {
+                "loss": loss,
+                "input_ids": input_ids,
+                "attention_mask": attention_mask,
+                "lines_info": [],
+                "segments": [text] if text else [],
+                "ppl": ppl,
+            }
+            if return_kv:
+                logger.warning("return_kv=True не поддерживается через OpenAI API; пропускаю past_key_values.")
+            if past_key_values is None and not return_kv:
+                self.cache["perplexity"][cache_key] = result
+                self._manage_cache_size("perplexity")
+            return result
 
-        # Flatten tokens for loss calculation
-        active = (attention_mask[:, past_length:end] == 1)[..., :-1].view(-1)
-        active_logits = shift_logits.view(-1, shift_logits.size(-1))[active]
-        active_labels = shift_labels.view(-1)[active]
+        prompt_tokens = getattr(resp.choices[0].logprobs, "prompt", None)
+        if not prompt_tokens:
+            logger.warning("Сервер не вернул prompt_logprobs; верну PPL=inf.")
+            loss = torch.tensor([], dtype=torch.float32)
+            ppl = float('inf')
+            result = {
+                "loss": loss,
+                "input_ids": input_ids,
+                "attention_mask": attention_mask,
+                "lines_info": [],
+                "segments": [text] if text else [],
+                "ppl": ppl,
+            }
+            if return_kv:
+                logger.warning("return_kv=True не поддерживается через OpenAI API.")
+            if past_key_values is None and not return_kv:
+                self.cache["perplexity"][cache_key] = result
+                self._manage_cache_size("perplexity")
+            return result
 
-        # Calculate loss
-        loss_fct = torch.nn.CrossEntropyLoss(reduction="none")
-        loss = loss_fct(active_logits, active_labels)
+        start_idx = max(1, past_length)
 
-        # Apply condition filtering if required
+        stop_idx = min(len(prompt_tokens), end) if input_ids is not None else len(prompt_tokens)
+
+        token_logprobs = [t.logprob for t in prompt_tokens[start_idx:stop_idx]]
+
         if condition_mode == "prefix":
-            loss = loss[condition_pos_id:]
+            cut = max(0, condition_pos_id - start_idx)
+            token_logprobs = token_logprobs[cut:]
+
+        if len(token_logprobs) == 0:
+            loss = torch.tensor([], dtype=torch.float32)
+            ppl = float('inf')
+        else:
+            nll = [-lp for lp in token_logprobs]
+            loss = torch.tensor(nll, dtype=torch.float32)
+            mean_loss = loss.mean()
+            ppl = math.exp(mean_loss.item()) if not math.isinf(mean_loss.item()) else float('inf')
 
         segments = [text] if text else []
         lines_info = []
-
-        # Calculate mean perplexity
-        mean_loss = loss.mean() if len(loss) > 0 else torch.tensor(0.0)
-        ppl = torch.exp(mean_loss).item() if mean_loss.item() != float('inf') else float('inf')
 
         result = {
             "loss": loss,
@@ -427,9 +470,9 @@ class LongCodeZip:
         }
 
         if return_kv:
-            result["past_key_values"] = outputs.past_key_values
-        else:
-            # Cache the result if we're not returning KV cache
+            logger.warning("return_kv=True doesn't support in OpenAI API; past_key_values are missing.")
+
+        if past_key_values is None and not return_kv:
             self.cache["perplexity"][cache_key] = result
             self._manage_cache_size("perplexity")
 
