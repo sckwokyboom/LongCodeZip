@@ -20,14 +20,11 @@ logger.add(sys.stderr, level="INFO")
 
 
 class EntropyChunking:
-    def __init__(self, api_base: str, api_key: str, model_name: str):
+    def __init__(self, openai_client: OpenAI, api_base: str, api_key: str, model_name: str, tokenizer):
         """Entropy-based text chunking implementation"""
         logger.debug(f"Loading Entropy chunking model: {model_name}")
-        self.openai_client = OpenAI(
-            base_url=api_base,
-            api_key=api_key
-        )
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.openai_client = openai_client
+        self.tokenizer = tokenizer
         self.model_name = model_name
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -207,7 +204,8 @@ class LongCodeZip:
             api_base: str = "http://localhost:8000/v1",
             api_key: str = "EMPTY",
             model_name: str = "Qwen/Qwen2.5-Coder-7B-Instruct-GPTQ-Int4",
-            device_map: str = "cuda",
+            tokenizer_path: str = "Qwen3-Coder-30B/",
+            device_map: str = "cpu",
             model_config: dict = {},
     ):
         """
@@ -219,11 +217,18 @@ class LongCodeZip:
             model_config: Additional configuration for the model
         """
         self.model_name = model_name
+        http_client = httpx.Client(
+            timeout=httpx.Timeout(connect=10, read=600, write=600, pool=60),
+            http2=False,
+            trust_env=False,
+            limits=httpx.Limits(max_connections=50, max_keepalive_connections=20),
+        )
         self.openai_client = OpenAI(
             base_url=api_base,
-            api_key=api_key
+            api_key=api_key,
+            http_client=http_client,
         )
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
         self.device = device_map
@@ -232,7 +237,7 @@ class LongCodeZip:
 
         # Initialize Entropy chunking with smaller model
         logger.debug("Initializing Entropy chunking...")
-        self.entropy_chunking = EntropyChunking(api_base, api_key, model_name)
+        self.entropy_chunking = EntropyChunking(self.openai_client, api_base, api_key, model_name, self.tokenizer)
 
         # Add caching system for model outputs and token information
         self.cache = {
