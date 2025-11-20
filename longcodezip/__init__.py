@@ -17,12 +17,12 @@ logger.remove()
 logger.add(sys.stderr, level="INFO")
 
 class EntropyChunking:
-    def __init__(self, model_name="Qwen/Qwen2.5-Coder-0.5B-Instruct"):
+    def __init__(self, model_name="/Users/sckwoky/Library/Application Support/Models/Qwen2.5-Coder-0.5B"):
         """Entropy-based text chunking implementation"""
         logger.debug(f"Loading Entropy chunking model: {model_name}")
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.float16)
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.model = AutoModelForCausalLM.from_pretrained(model_name, dtype=torch.float16)
+        self.device = torch.device("mps")
         self.model.to(self.device)
         
         if self.tokenizer.pad_token is None:
@@ -199,8 +199,8 @@ class EntropyChunking:
 class LongCodeZip:
     def __init__(
         self,
-        model_name: str = "Qwen/Qwen2.5-Coder-7B-Instruct-GPTQ-Int4",
-        device_map: str = "cuda",
+        model_name: str = "/Users/sckwoky/Library/Application Support/Models/Qwen/Qwen2.5-Coder-0.5B",
+        device_map: str = "mps",
         model_config: dict = {},
     ):
         """
@@ -237,7 +237,7 @@ class LongCodeZip:
         self.context_idxs = []
     
     def load_model(
-        self, model_name: str, device_map: str = "cuda", model_config: dict = {}
+        self, model_name: str, device_map: str = "mps", model_config: dict = {}
     ):
         """
         Load the language model and tokenizer.
@@ -248,9 +248,9 @@ class LongCodeZip:
             model_config: Additional configuration for the model
         """
         logger.debug(f"Loading model {model_name} on {device_map}")
-        torch_dtype = torch.bfloat16 if "torch_dtype" not in model_config else model_config["torch_dtype"]
-        # model_kwargs = {"device_map": device_map, "torch_dtype": torch_dtype, "trust_remote_code": True}
-        model_kwargs = {"device_map": device_map, "torch_dtype": torch_dtype, "trust_remote_code": True}
+        dtype = torch.bfloat16 if "dtype" not in model_config else model_config["dtype"]
+        # model_kwargs = {"device_map": device_map, "dtype": dtype, "trust_remote_code": True}
+        model_kwargs = {"device_map": device_map, "dtype": dtype, "trust_remote_code": True}
         
         for k, v in model_config.items():
             model_kwargs[k] = v
@@ -679,7 +679,7 @@ class LongCodeZip:
         instruction: str = "",
         rate: float = 0.5,
         target_token: float = -1,
-        language: str = "python",
+        language: str = "java",
         dynamic_compression_ratio: float = 0.2,
         context_budget: str = "+100",
         rank_only: bool = False,
@@ -1452,7 +1452,7 @@ class LongCodeZip:
                 "fine_grained_method_used": fine_grained_importance_method,
             }
     
-    def split_code_by_functions(self, code: str, language: str = "python", custom_separator: str = "# --CHUNK_SEPARATOR-- #") -> List[str]:
+    def split_code_by_functions(self, code: str, language: str = "java", custom_separator: str = "# --CHUNK_SEPARATOR-- #") -> List[str]:
         """
         Split code into chunks based on function and class definitions for various languages.
         Also splits on custom separator if provided.
@@ -1486,7 +1486,7 @@ class LongCodeZip:
         
         # Use default Python pattern if language not supported
         if language.lower() not in patterns:
-            language = "python"
+            language = "java"
         
         # First check if we need to split by custom separator
         separator_chunks = []
@@ -1661,7 +1661,7 @@ class LongCodeZip:
         block_importances: List[float],
         target_tokens: int,
         preserved_block_indices: set = None,
-        language: str = "python"
+        language: str = "java"
     ) -> Tuple[set, Dict]:
         """
         Use knapsack algorithm to select blocks that maximize total importance within token budget.
